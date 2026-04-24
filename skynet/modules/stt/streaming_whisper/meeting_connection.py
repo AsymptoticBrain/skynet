@@ -1,10 +1,9 @@
 from itertools import chain
-from typing import List
-
-from faster_whisper.tokenizer import Tokenizer
+from typing import List, Union
 
 from starlette.websockets import WebSocket
 
+from skynet.env import whisper_backend
 from skynet.env import whisper_max_finals_in_initial_prompt as max_finals
 
 from skynet.logs import get_logger
@@ -13,17 +12,22 @@ from skynet.modules.stt.streaming_whisper.chunk import Chunk
 from skynet.modules.stt.streaming_whisper.state import State
 from skynet.modules.stt.streaming_whisper.utils import utils
 
+if whisper_backend == 'local':
+    from faster_whisper.tokenizer import Tokenizer
+else:
+    Tokenizer = None  # type: ignore[assignment]
+
 log = get_logger(__name__)
 
 
 class MeetingConnection:
     participants: dict[str, State] = {}
-    previous_transcription_tokens: List[int]
-    previous_transcription_store: List[List[int]]
+    previous_transcription_tokens: Union[List[int], str]
+    previous_transcription_store: Union[List[List[int]], List[str]]
     total_finals: int
     total_interims: int
     total_audio_received_s: float
-    tokenizer: Tokenizer | None
+    tokenizer: 'Tokenizer | None'
     meeting_language: str | None
     meeting_id: str
     ws: WebSocket
@@ -33,7 +37,7 @@ class MeetingConnection:
         self.participants = {}
         self.ws = ws
         self.meeting_id = meeting_id
-        self.previous_transcription_tokens = []
+        self.previous_transcription_tokens = [] if whisper_backend == 'local' else ''
         self.previous_transcription_store = []
         self.total_finals = 0
         self.total_interims = 0
@@ -52,11 +56,18 @@ class MeetingConnection:
     async def update_initial_prompt(self, previous_payloads: list[utils.TranscriptionResponse]):
         for payload in previous_payloads:
             if payload.type == 'final' and not any(prompt in payload.text for prompt in utils.black_listed_prompts):
-                self.previous_transcription_store.append(self.tokenizer.encode(f' {payload.text.strip()}'))
-                if len(self.previous_transcription_tokens) > max_finals:
-                    self.previous_transcription_store.pop(0)
-                # flatten the list of lists
-                self.previous_transcription_tokens = list(chain.from_iterable(self.previous_transcription_store))
+                text = payload.text.strip()
+                if whisper_backend == 'local':
+                    self.previous_transcription_store.append(self.tokenizer.encode(f' {text}'))
+                    if len(self.previous_transcription_tokens) > max_finals:
+                        self.previous_transcription_store.pop(0)
+                    # flatten the list of lists
+                    self.previous_transcription_tokens = list(chain.from_iterable(self.previous_transcription_store))
+                else:
+                    self.previous_transcription_store.append(text)
+                    if len(self.previous_transcription_store) > max_finals:
+                        self.previous_transcription_store.pop(0)
+                    self.previous_transcription_tokens = ' '.join(self.previous_transcription_store)
 
     async def process(self, chunk: bytes, chunk_timestamp: int) -> List[utils.TranscriptionResponse] | None:
         a_chunk = Chunk(chunk, chunk_timestamp)
@@ -64,9 +75,10 @@ class MeetingConnection:
         # The first chunk sets the meeting language and initializes the Tokenizer
         if not self.meeting_language:
             self.meeting_language = a_chunk.language
-            self.tokenizer = Tokenizer(
-                model.hf_tokenizer, multilingual=False, task='transcribe', language=self.meeting_language
-            )
+            if whisper_backend == 'local':
+                self.tokenizer = Tokenizer(
+                    model.hf_tokenizer, multilingual=False, task='transcribe', language=self.meeting_language
+                )
 
         if a_chunk.participant_id not in self.participants:
             log.debug(

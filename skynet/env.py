@@ -91,6 +91,16 @@ redis_aws_region = os.environ.get('REDIS_AWS_REGION', 'us-west-2')
 
 
 # modules > stt > streaming_whisper
+whisper_backend = os.environ.get('WHISPER_BACKEND', 'local').strip().lower()
+if whisper_backend not in ('local', 'remote'):
+    raise RuntimeError(f'Invalid WHISPER_BACKEND: {whisper_backend}. Must be "local" or "remote".')
+whisper_remote_url = os.environ.get('WHISPER_REMOTE_URL', '').rstrip('/')
+whisper_remote_model = os.environ.get('WHISPER_REMOTE_MODEL', 'whisper-1')
+whisper_remote_api_key = os.environ.get('WHISPER_REMOTE_API_KEY')
+whisper_remote_timeout = float(os.environ.get('WHISPER_REMOTE_TIMEOUT', 30))
+if whisper_backend == 'remote' and not whisper_remote_url:
+    raise RuntimeError('WHISPER_REMOTE_URL must be set when WHISPER_BACKEND=remote')
+
 whisper_beam_size = int(os.environ.get('BEAM_SIZE', 5))
 whisper_model_name = os.environ.get('WHISPER_MODEL_NAME')
 # https://opennmt.net/CTranslate2/quantization.html

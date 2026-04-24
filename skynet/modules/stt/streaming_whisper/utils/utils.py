@@ -1,8 +1,10 @@
+import math
 import secrets
 import time
 from datetime import datetime, timezone
 from typing import List, Tuple
 
+import httpx
 import numpy as np
 from numpy import ndarray
 from pydantic import BaseModel
@@ -10,7 +12,15 @@ from silero_vad import get_speech_timestamps, read_audio
 from uuid6 import UUID
 
 import skynet.modules.stt.streaming_whisper.cfg as cfg
-from skynet.env import whisper_beam_size, whisper_min_probability
+from skynet.env import (
+    whisper_backend,
+    whisper_beam_size,
+    whisper_min_probability,
+    whisper_remote_api_key,
+    whisper_remote_model,
+    whisper_remote_timeout,
+    whisper_remote_url,
+)
 from skynet.logs import get_logger
 
 log = get_logger(__name__)
@@ -60,11 +70,102 @@ class WhisperResult:
     confidence: float
     language: str
 
-    def __init__(self, ts_result):
-        self.text = ''.join([segment.text for segment in ts_result])
-        self.segments = [WhisperSegment.model_validate(segment._asdict()) for segment in ts_result]
-        self.words = [WhisperWord.model_validate(word._asdict()) for segment in ts_result for word in segment.words]
+    def __init__(
+        self,
+        text: str = '',
+        segments: list[WhisperSegment] | None = None,
+        words: list[WhisperWord] | None = None,
+        language: str = '',
+    ):
+        self.text = text
+        self.segments = segments or []
+        self.words = words or []
+        self.language = language
         self.confidence = self.get_confidence()
+
+    @classmethod
+    def from_faster_whisper(cls, ts_result) -> 'WhisperResult':
+        return cls(
+            text=''.join([segment.text for segment in ts_result]),
+            segments=[WhisperSegment.model_validate(segment._asdict()) for segment in ts_result],
+            words=[
+                WhisperWord.model_validate(word._asdict()) for segment in ts_result for word in segment.words
+            ],
+        )
+
+    @classmethod
+    def from_verbose_json(cls, data: dict) -> 'WhisperResult':
+        """Build a WhisperResult from an OpenAI-compatible verbose_json response.
+
+        Word-level probability isn't exposed in the OpenAI format, so we derive
+        a per-word probability from the enclosing segment's ``avg_logprob``
+        (falling back to 1.0 when absent) to keep cut-mark heuristics working.
+        """
+        seg_data = data.get('segments') or []
+        word_data = data.get('words') or []
+
+        def seg_prob(seg: dict) -> float:
+            avg = seg.get('avg_logprob')
+            if avg is None:
+                return 1.0
+            try:
+                return float(math.exp(avg))
+            except (ValueError, OverflowError):
+                return 1.0
+
+        segments = [
+            WhisperSegment(
+                id=int(seg.get('id', i)),
+                seek=int(seg.get('seek', 0)),
+                start=float(seg.get('start', 0.0)),
+                end=float(seg.get('end', 0.0)),
+                text=seg.get('text', ''),
+                tokens=list(seg.get('tokens', [])),
+                temperature=float(seg.get('temperature', 0.0)),
+                avg_logprob=float(seg.get('avg_logprob', 0.0)),
+                compression_ratio=float(seg.get('compression_ratio', 0.0)),
+                no_speech_prob=float(seg.get('no_speech_prob', 0.0)),
+                words=[],
+            )
+            for i, seg in enumerate(seg_data)
+        ]
+
+        words: list[WhisperWord] = []
+        for w in word_data:
+            w_start = float(w.get('start', 0.0))
+            w_end = float(w.get('end', w_start))
+            prob = 1.0
+            for raw_seg in seg_data:
+                s_start = float(raw_seg.get('start', 0.0))
+                s_end = float(raw_seg.get('end', float('inf')))
+                if s_start <= w_start <= s_end:
+                    prob = seg_prob(raw_seg)
+                    break
+            words.append(
+                WhisperWord(
+                    word=w.get('word', ''),
+                    start=w_start,
+                    end=w_end,
+                    probability=prob,
+                )
+            )
+
+        text = data.get('text', '') or ''.join(seg.text for seg in segments)
+
+        # Fallback: if we got text and segments but no word timestamps (some
+        # servers omit them), synthesize a single word so the downstream
+        # cut-mark logic has something to work with.
+        if not words and segments:
+            words = [
+                WhisperWord(
+                    word=text.strip(),
+                    start=segments[0].start,
+                    end=segments[-1].end,
+                    probability=seg_prob(seg_data[0]) if seg_data else 1.0,
+                )
+            ]
+
+        return cls(text=text, segments=segments, words=words, language=data.get('language', ''))
 
     def __str__(self):
         return (
@@ -287,10 +388,24 @@ def now() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
-def transcribe(buffer_list: List[bytes], lang: str = 'en', previous_tokens=None) -> WhisperResult:
-    if previous_tokens is None:
-        previous_tokens = []
-    audio_bytes = b''.join(buffer_list)
+_remote_client: httpx.Client | None = None
+
+
+def _get_remote_client() -> httpx.Client:
+    global _remote_client
+    if _remote_client is None:
+        headers = {}
+        if whisper_remote_api_key:
+            headers['Authorization'] = f'Bearer {whisper_remote_api_key}'
+        _remote_client = httpx.Client(
+            base_url=whisper_remote_url,
+            headers=headers,
+            timeout=whisper_remote_timeout,
+        )
+    return _remote_client
+
+
+def _transcribe_local(audio_bytes: bytes, lang: str, previous_tokens) -> WhisperResult:
     audio = load_audio(audio_bytes)
     iterator, _ = cfg.model.transcribe(
         audio,
@@ -302,9 +417,51 @@ def transcribe(buffer_list: List[bytes], lang: str = 'en', previous_tokens=None)
         condition_on_previous_text=False,
     )
     res = list(iterator)
-    ts_obj = WhisperResult(res)
+    ts_obj = WhisperResult.from_faster_whisper(res)
     log.debug(f'Transcription results:\n{ts_obj}\n{res}')
     return ts_obj
+
+
+def _transcribe_remote(audio_bytes: bytes, lang: str, previous_tokens) -> WhisperResult:
+    duration_s = convert_bytes_to_seconds(audio_bytes)
+    wav_bytes = get_wav_header([audio_bytes], chunk_duration_s=duration_s) + audio_bytes
+
+    data = {
+        'model': whisper_remote_model,
+        'language': lang,
+        'response_format': 'verbose_json',
+        'timestamp_granularities[]': 'word',
+        'temperature': '0',
+    }
+    if isinstance(previous_tokens, str) and previous_tokens.strip():
+        data['prompt'] = previous_tokens.strip()
+
+    files = {'file': ('audio.wav', wav_bytes, 'audio/wav')}
+
+    client = _get_remote_client()
+    try:
+        response = client.post('/v1/audio/transcriptions', data=data, files=files)
+        response.raise_for_status()
+    except httpx.HTTPError as e:
+        raise RuntimeError(f'Remote whisper request failed: {e}') from e
+
+    try:
+        payload = response.json()
+    except ValueError as e:
+        raise RuntimeError(f'Remote whisper returned non-JSON response: {e}') from e
+
+    ts_obj = WhisperResult.from_verbose_json(payload)
+    log.debug(f'Remote transcription results:\n{ts_obj}\n{payload}')
+    return ts_obj
+
+
+def transcribe(buffer_list: List[bytes], lang: str = 'en', previous_tokens=None) -> WhisperResult:
+    if previous_tokens is None:
+        previous_tokens = [] if whisper_backend == 'local' else ''
+    audio_bytes = b''.join(buffer_list)
+    if whisper_backend == 'remote':
+        return _transcribe_remote(audio_bytes, lang, previous_tokens)
+    return _transcribe_local(audio_bytes, lang, previous_tokens)
 
 
 def get_lang(lang: str, short=True) -> str:
