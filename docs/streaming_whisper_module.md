@@ -1,6 +1,10 @@
 # Streaming Whisper Module
 
-Performs live transcriptions using [Faster Whisper](https://github.com/SYSTRAN/faster-whisper) via a websocket connection.
+Performs live transcriptions via a websocket connection. By default it uses
+[Faster Whisper](https://github.com/SYSTRAN/faster-whisper) in-process; set
+`WHISPER_BACKEND=remote` + `WHISPER_REMOTE_URL` to forward each chunk to an
+OpenAI-compatible `/v1/audio/transcriptions` endpoint instead (e.g. a vLLM
+server serving `openai/whisper-large-v3`) so the host doesn't need a GPU.
 
 Enable the module by setting the `ENABLED_MODULES` env var to `streaming_whisper`.
 
