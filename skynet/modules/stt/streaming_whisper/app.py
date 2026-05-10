@@ -6,6 +6,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     Response,
     UploadFile,
     WebSocket,
@@ -56,8 +57,12 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str, auth_token: 
             await ws_connection_manager.process(connection, chunk, utils.now())
 
 
+_UPLOAD_READ_CHUNK = 1024 * 1024
+
+
 @app.post('/v1/audio/transcriptions', dependencies=_http_dependencies)
 async def transcribe_audio(
+    request: Request,
     file: UploadFile = File(...),
     model: str | None = Form(None),  # accepted for OpenAI-API compatibility, ignored
     language: str | None = Form(None),
@@ -70,15 +75,39 @@ async def transcribe_audio(
     the upstream server accepts for the remote backend) and returns the
     transcript synchronously."""
 
-    file_bytes = await file.read()
-    size = len(file_bytes)
+    too_large = HTTPException(
+        status_code=413,
+        detail=f'Upload exceeds WHISPER_BATCH_MAX_UPLOAD_BYTES ({whisper_batch_max_upload_bytes} bytes)',
+    )
+
+    # Fast path: trust Content-Length when present so a client streaming a
+    # multi-GB upload gets rejected before we buffer anything. The body is
+    # multipart so this is an upper bound on the file payload, which is fine
+    # for a reject-only check.
+    content_length = request.headers.get('content-length')
+    if content_length:
+        try:
+            if int(content_length) > whisper_batch_max_upload_bytes:
+                raise too_large
+        except ValueError:
+            pass
+
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        chunk = await file.read(_UPLOAD_READ_CHUNK)
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > whisper_batch_max_upload_bytes:
+            raise too_large
+        chunks.append(chunk)
+
     if size == 0:
         raise HTTPException(status_code=400, detail='Empty upload')
-    if size > whisper_batch_max_upload_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f'Upload exceeds WHISPER_BATCH_MAX_UPLOAD_BYTES ({whisper_batch_max_upload_bytes} bytes)',
-        )
+
+    file_bytes = b''.join(chunks)
+    chunks.clear()
 
     log.info(
         f'Batch transcription: filename={file.filename!r} size={size} ' f'lang={language!r} fmt={response_format!r}'

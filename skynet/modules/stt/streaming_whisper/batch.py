@@ -5,7 +5,12 @@ from typing import Any
 import httpx
 
 import skynet.modules.stt.streaming_whisper.cfg as cfg
-from skynet.env import whisper_backend, whisper_beam_size, whisper_remote_model
+from skynet.env import (
+    whisper_backend,
+    whisper_batch_remote_timeout,
+    whisper_beam_size,
+    whisper_remote_model,
+)
 from skynet.logs import get_logger
 from skynet.modules.stt.streaming_whisper.utils.utils import (
     _get_remote_client,
@@ -92,7 +97,12 @@ def _transcribe_remote_file(
 
     client = _get_remote_client()
     try:
-        response = client.post('/v1/audio/transcriptions', data=data, files=files)
+        response = client.post(
+            '/v1/audio/transcriptions',
+            data=data,
+            files=files,
+            timeout=whisper_batch_remote_timeout,
+        )
         response.raise_for_status()
     except httpx.HTTPError as e:
         raise RuntimeError(f'Remote whisper request failed: {e}') from e

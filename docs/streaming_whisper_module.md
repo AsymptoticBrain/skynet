@@ -64,7 +64,11 @@ Form fields (mirrors the OpenAI spec):
 | `temperature`     | no       | Accepted for API parity, ignored.                                     |
 
 Synchronous: the response returns once transcription completes. Cap upload
-size with `WHISPER_BATCH_MAX_UPLOAD_BYTES` (default 500 MB).
+size with `WHISPER_BATCH_MAX_UPLOAD_BYTES` (default 500 MB) — the endpoint
+streams the upload and rejects with `413` as soon as that threshold is crossed
+(or up-front when `Content-Length` already exceeds it). For the remote backend,
+batch requests use `WHISPER_BATCH_REMOTE_TIMEOUT` (default 600 s) instead of the
+shorter `WHISPER_REMOTE_TIMEOUT` used by the streaming-chunk path.
 
 Curl example:
 
