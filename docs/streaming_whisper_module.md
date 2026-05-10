@@ -40,6 +40,46 @@ python3 -m http.server 8080
 
 Open http://127.0.0.1:8080.
 
+## Batch transcription (post-meeting)
+
+In addition to the live websocket, the module exposes an OpenAI-compatible HTTP
+endpoint for transcribing complete recordings (e.g. a Jibri output, a hand
+upload, or a buffered file from any other source):
+
+```
+POST /streaming-whisper/v1/audio/transcriptions
+Content-Type: multipart/form-data
+Authorization: Bearer <JWT>          # omit when BYPASS_AUTHORIZATION=1
+```
+
+Form fields (mirrors the OpenAI spec):
+
+| Field             | Required | Notes                                                                 |
+|-------------------|----------|-----------------------------------------------------------------------|
+| `file`            | yes      | Audio file. Local backend decodes via PyAV (wav/mp3/opus/m4a/webm/…). |
+| `language`        | no       | ISO-639-1, e.g. `sv`, `en`. Auto-detected if omitted.                 |
+| `prompt`          | no       | Initial prompt / glossary string.                                     |
+| `response_format` | no       | `verbose_json` (default), `json`, or `text`.                          |
+| `model`           | no       | Accepted for API parity, ignored — Skynet uses its configured model.  |
+| `temperature`     | no       | Accepted for API parity, ignored.                                     |
+
+Synchronous: the response returns once transcription completes. Cap upload
+size with `WHISPER_BATCH_MAX_UPLOAD_BYTES` (default 500 MB).
+
+Curl example:
+
+```bash
+curl -X POST https://skynet.example/streaming-whisper/v1/audio/transcriptions \
+  -H "Authorization: Bearer $JWT" \
+  -F "file=@meeting.opus" \
+  -F "language=sv" \
+  -F "response_format=verbose_json"
+```
+
+The same shape works against the OpenAI Python SDK with `base_url` pointed at
+`https://skynet.example/streaming-whisper/v1`. Pair it with
+`POST /summaries/v1/summary` to chain transcription → summary in two HTTP calls.
+
 ## Websocket connection string
 
 ```

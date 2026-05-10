@@ -121,6 +121,10 @@ ws_max_ping_timeout = int(os.environ.get('WS_MAX_PING_TIMEOUT', 30))
 whisper_max_finals_in_initial_prompt = int(os.environ.get('WHISPER_MAX_FINALS_IN_INITIAL_PROMPT', 2))
 # The period in milliseconds to flush the buffer after no new spoken audio is detected
 whisper_flush_interval = int(os.environ.get('WHISPER_FLUSH_BUFFER_INTERVAL', 2000))
+# Max accepted upload size for the batch (POST /v1/audio/transcriptions) endpoint.
+# Default 500 MB — comfortably covers the 100-min / 1 GB raw recording cap once
+# compressed to opus/m4a, which is what Jibri (and most browser recorders) emit.
+whisper_batch_max_upload_bytes = int(os.environ.get('WHISPER_BATCH_MAX_UPLOAD_BYTES', 500 * 1024 * 1024))
 
 # jobs
 job_timeout = int(os.environ.get('JOB_TIMEOUT', 60 * 5))  # 5 minutes default
