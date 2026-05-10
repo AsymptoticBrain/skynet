@@ -1,6 +1,22 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, WebSocketException
+import asyncio
 
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Response,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+    WebSocketException,
+)
+
+from skynet.auth.bearer import JWTBearer
+from skynet.env import bypass_auth, whisper_batch_max_upload_bytes
 from skynet.logs import get_logger
+from skynet.modules.stt.streaming_whisper.batch import render_response, transcribe_file
 from skynet.modules.stt.streaming_whisper.connection_manager import ConnectionManager
 from skynet.modules.stt.streaming_whisper.utils import utils
 
@@ -8,6 +24,8 @@ log = get_logger(__name__)
 
 ws_connection_manager = ConnectionManager()
 app = FastAPI()  # No need for CORS middleware
+
+_http_dependencies = [] if bypass_auth else [Depends(JWTBearer())]
 
 
 @app.websocket('/ws/{meeting_id}')
@@ -36,3 +54,53 @@ async def websocket_endpoint(websocket: WebSocket, meeting_id: str, auth_token: 
                 await ws_connection_manager.disconnect(connection)
                 break
             await ws_connection_manager.process(connection, chunk, utils.now())
+
+
+@app.post('/v1/audio/transcriptions', dependencies=_http_dependencies)
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    model: str | None = Form(None),  # accepted for OpenAI-API compatibility, ignored
+    language: str | None = Form(None),
+    prompt: str | None = Form(None),
+    response_format: str = Form('verbose_json'),
+    temperature: float | None = Form(None),  # accepted for compatibility, ignored
+):
+    """OpenAI-compatible batch transcription. Accepts a complete audio file
+    (any container/codec ffmpeg/PyAV can decode for the local backend, anything
+    the upstream server accepts for the remote backend) and returns the
+    transcript synchronously."""
+
+    file_bytes = await file.read()
+    size = len(file_bytes)
+    if size == 0:
+        raise HTTPException(status_code=400, detail='Empty upload')
+    if size > whisper_batch_max_upload_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f'Upload exceeds WHISPER_BATCH_MAX_UPLOAD_BYTES ({whisper_batch_max_upload_bytes} bytes)',
+        )
+
+    log.info(
+        f'Batch transcription: filename={file.filename!r} size={size} ' f'lang={language!r} fmt={response_format!r}'
+    )
+
+    try:
+        result, duration = await asyncio.to_thread(
+            transcribe_file,
+            file_bytes,
+            file.filename or 'audio',
+            file.content_type,
+            language,
+            prompt,
+        )
+    except RuntimeError as e:
+        log.warning(f'Batch transcription failed: {e}')
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception as e:
+        log.exception('Batch transcription crashed')
+        raise HTTPException(status_code=500, detail=f'Transcription failed: {e}') from e
+
+    body = render_response(result, duration, response_format)
+    if isinstance(body, str):
+        return Response(content=body, media_type='text/plain')
+    return body
