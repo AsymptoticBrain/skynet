@@ -5,17 +5,13 @@ from typing import Any
 import httpx
 
 import skynet.modules.stt.streaming_whisper.cfg as cfg
-from skynet.env import (
-    whisper_backend,
-    whisper_beam_size,
-    whisper_remote_model,
-)
+from skynet.env import whisper_backend, whisper_beam_size, whisper_remote_model
 from skynet.logs import get_logger
 from skynet.modules.stt.streaming_whisper.utils.utils import (
+    _get_remote_client,
     WhisperResult,
     WhisperSegment,
     WhisperWord,
-    _get_remote_client,
 )
 
 log = get_logger(__name__)
