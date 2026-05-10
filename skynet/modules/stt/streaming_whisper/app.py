@@ -6,7 +6,6 @@ from fastapi import (
     File,
     Form,
     HTTPException,
-    Request,
     Response,
     UploadFile,
     WebSocket,
@@ -27,6 +26,63 @@ ws_connection_manager = ConnectionManager()
 app = FastAPI()  # No need for CORS middleware
 
 _http_dependencies = [] if bypass_auth else [Depends(JWTBearer())]
+
+
+# Headroom over WHISPER_BATCH_MAX_UPLOAD_BYTES for multipart envelope (boundaries
+# + the small auxiliary form fields). Anything past this is rejected by Content-
+# Length before Starlette parses the body, so a multi-GB POST never gets spooled.
+_MULTIPART_OVERHEAD_HEADROOM = 64 * 1024
+
+
+class _BatchUploadSizeMiddleware:
+    """ASGI middleware that 413s oversized batch transcription uploads on the
+    Content-Length header alone, before FastAPI's `File(...)` dependency
+    triggers multipart parsing and spools the entire body."""
+
+    def __init__(self, asgi_app, path: str, max_bytes: int):
+        self._app = asgi_app
+        self._path = path
+        self._limit = max_bytes + _MULTIPART_OVERHEAD_HEADROOM
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope.get('type') == 'http'
+            and scope.get('method') == 'POST'
+            and scope.get('path') == self._path
+        ):
+            for name, value in scope.get('headers', ()):
+                if name == b'content-length':
+                    try:
+                        declared = int(value)
+                    except ValueError:
+                        break
+                    if declared > self._limit:
+                        await send(
+                            {
+                                'type': 'http.response.start',
+                                'status': 413,
+                                'headers': [(b'content-type', b'application/json')],
+                            }
+                        )
+                        await send(
+                            {
+                                'type': 'http.response.body',
+                                'body': (
+                                    b'{"detail":"Upload exceeds '
+                                    b'WHISPER_BATCH_MAX_UPLOAD_BYTES"}'
+                                ),
+                            }
+                        )
+                        return
+                    break
+        await self._app(scope, receive, send)
+
+
+app.add_middleware(
+    _BatchUploadSizeMiddleware,
+    path='/v1/audio/transcriptions',
+    max_bytes=whisper_batch_max_upload_bytes,
+)
 
 
 @app.websocket('/ws/{meeting_id}')
@@ -62,7 +118,6 @@ _UPLOAD_READ_CHUNK = 1024 * 1024
 
 @app.post('/v1/audio/transcriptions', dependencies=_http_dependencies)
 async def transcribe_audio(
-    request: Request,
     file: UploadFile = File(...),
     model: str | None = Form(None),  # accepted for OpenAI-API compatibility, ignored
     language: str | None = Form(None),
@@ -75,23 +130,10 @@ async def transcribe_audio(
     the upstream server accepts for the remote backend) and returns the
     transcript synchronously."""
 
-    too_large = HTTPException(
-        status_code=413,
-        detail=f'Upload exceeds WHISPER_BATCH_MAX_UPLOAD_BYTES ({whisper_batch_max_upload_bytes} bytes)',
-    )
-
-    # Fast path: trust Content-Length when present so a client streaming a
-    # multi-GB upload gets rejected before we buffer anything. The body is
-    # multipart so this is an upper bound on the file payload, which is fine
-    # for a reject-only check.
-    content_length = request.headers.get('content-length')
-    if content_length:
-        try:
-            if int(content_length) > whisper_batch_max_upload_bytes:
-                raise too_large
-        except ValueError:
-            pass
-
+    # Stream the upload from the spooled multipart part and abort the moment
+    # the audio payload itself exceeds the cap. The middleware above already
+    # rejected truly huge requests on Content-Length; this catches the case
+    # where Content-Length was missing or understated.
     chunks: list[bytes] = []
     size = 0
     while True:
@@ -100,7 +142,13 @@ async def transcribe_audio(
             break
         size += len(chunk)
         if size > whisper_batch_max_upload_bytes:
-            raise too_large
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f'Upload exceeds WHISPER_BATCH_MAX_UPLOAD_BYTES '
+                    f'({whisper_batch_max_upload_bytes} bytes)'
+                ),
+            )
         chunks.append(chunk)
 
     if size == 0:
