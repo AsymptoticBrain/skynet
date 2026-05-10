@@ -64,7 +64,15 @@ Form fields (mirrors the OpenAI spec):
 | `temperature`     | no       | Accepted for API parity, ignored.                                     |
 
 Synchronous: the response returns once transcription completes. Cap upload
-size with `WHISPER_BATCH_MAX_UPLOAD_BYTES` (default 500 MB).
+size with `WHISPER_BATCH_MAX_UPLOAD_BYTES` (default 500 MB) — requests whose
+`Content-Length` exceeds that (plus a small multipart envelope headroom) are
+rejected with `413` by ASGI middleware before the body is parsed, so a
+multi-GB POST never gets spooled. The handler then streams the audio part
+itself and 413s if its decoded size still exceeds the cap (covers requests
+without `Content-Length` or with an understated header). For the remote
+backend, batch requests use `WHISPER_BATCH_REMOTE_TIMEOUT` (default 600 s)
+instead of the shorter `WHISPER_REMOTE_TIMEOUT` used by the streaming-chunk
+path.
 
 Curl example:
 

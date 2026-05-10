@@ -98,6 +98,10 @@ whisper_remote_url = os.environ.get('WHISPER_REMOTE_URL', '').rstrip('/')
 whisper_remote_model = os.environ.get('WHISPER_REMOTE_MODEL', 'whisper-1')
 whisper_remote_api_key = os.environ.get('WHISPER_REMOTE_API_KEY')
 whisper_remote_timeout = float(os.environ.get('WHISPER_REMOTE_TIMEOUT', 30))
+# Separate, much larger timeout for the batch endpoint: a full meeting recording
+# can legitimately take minutes to transcribe upstream, while the streaming path
+# wants the short 30s default to fail fast on stuck chunks.
+whisper_batch_remote_timeout = float(os.environ.get('WHISPER_BATCH_REMOTE_TIMEOUT', 600))
 if whisper_backend == 'remote' and not whisper_remote_url:
     raise RuntimeError('WHISPER_REMOTE_URL must be set when WHISPER_BACKEND=remote')
 
