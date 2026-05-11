@@ -6,7 +6,6 @@ It is comprised of specialized modules which can be enabled or disabled as neede
 
 - **Summary and Action Items** with vllm (or Ollama)
 - **Live Transcriptions** with Faster Whisper via websockets
-- **RAG Assistant**
 - 🚧 _More to follow_
 
 ## Requirements
@@ -14,7 +13,7 @@ It is comprised of specialized modules which can be enabled or disabled as neede
 - Poetry
 - Redis
 
-## Summaries / Assistant Quickstart
+## Summaries Quickstart
 
 ```bash
 # disable authorization

@@ -1,12 +1,8 @@
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
-from operator import itemgetter
 from typing import List, Optional
 
-from langchain_classic.retrievers import ContextualCompressionRetriever
-from langchain_community.document_compressors import FlashrankRerank
-from langchain_core.documents import Document
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
@@ -15,12 +11,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from oci.exceptions import TransientServiceError
 from openai.types.chat import ChatCompletionMessageParam
 
-from skynet.env import modules, oci_blackout_fallback_duration, use_oci
+from skynet.env import oci_blackout_fallback_duration, use_oci
 from skynet.logs import get_logger
 from skynet.modules.monitoring import MAP_REDUCE_CHUNKING_COUNTER
-from skynet.modules.ttt.assistant.constants import assistant_rag_question_extractor
-from skynet.modules.ttt.assistant.utils import get_assistant_chat_messages
-from skynet.modules.ttt.assistant.v1.models import AssistantDocumentPayload
 from skynet.modules.ttt.llm_selector import LLMSelector
 from skynet.modules.ttt.ratelimit_tracker import (
     extract_ratelimit_from_response,
@@ -95,68 +88,6 @@ hint_type_to_prompt = {
         HintType.TEXT: table_of_contents_text,
     },
 }
-
-
-def format_docs(docs: list[Document]) -> str:
-    for doc in docs:
-        log.debug(doc.metadata.get('source'))
-
-    log.info(f'Using {len(docs)} documents for RAG')
-
-    return '\n\n'.join(
-        f"### Document source: {doc.metadata.get('source')}\n{doc.page_content}" for i, doc in enumerate(docs)
-    )
-
-
-compressor = FlashrankRerank() if 'assistant' in modules else None
-
-
-async def assist(model: BaseChatModel, payload: AssistantDocumentPayload, customer_id: Optional[str] = None) -> str:
-    from skynet.modules.ttt.rag.app import get_vector_store
-
-    store = await get_vector_store()
-    customer_store = await store.get(customer_id)
-    retriever = None
-    system_message = None
-    question = payload.prompt
-    is_generated_question = False
-
-    if customer_store:
-        config = await store.get_config(customer_id)
-        system_message = config.system_message
-        base_retriever = customer_store.as_retriever(search_kwargs={'k': payload.top_k})
-        retriever = ContextualCompressionRetriever(base_compressor=compressor, base_retriever=base_retriever)
-
-    if retriever and not question and payload.text:
-        question_payload = DocumentPayload(prompt='\n'.join([payload.text, assistant_rag_question_extractor]), text='')
-        question = await process_text(model, question_payload)
-        question = question.strip()
-        is_generated_question = True
-
-    log.info(
-        f'Using {"generated " if is_generated_question else ""}question: {question}. System message: {system_message or "default"}'
-    )
-
-    template = ChatPromptTemplate(
-        get_assistant_chat_messages(
-            use_rag=bool(retriever),
-            use_only_rag_data=payload.use_only_rag_data,
-            text=payload.text,
-            prompt=payload.prompt,
-            system_message=system_message,
-        )
-    )
-
-    log.debug(f'Using template: {template}')
-
-    rag_chain = (
-        {'context': (itemgetter('question') | retriever | format_docs) if retriever else lambda _: ''}
-        | template
-        | model
-        | StrOutputParser()
-    )
-
-    return await rag_chain.ainvoke(input={'question': question})
 
 
 async def summarize(model: BaseChatModel, job: Job) -> str:
@@ -282,9 +213,7 @@ async def process(job: Job) -> str:
     )
 
     try:
-        if job_type == JobType.ASSIST:
-            result = await assist(llm, payload, customer_id)
-        elif job_type in [JobType.SUMMARY, JobType.ACTION_ITEMS, JobType.TABLE_OF_CONTENTS]:
+        if job_type in [JobType.SUMMARY, JobType.ACTION_ITEMS, JobType.TABLE_OF_CONTENTS]:
             result = await summarize(llm, job)
         elif job_type == JobType.PROCESS_TEXT:
             result = await process_text(llm, payload)
