@@ -33,9 +33,9 @@ def tobool(val: str | None):
 app_port = int(os.environ.get('SKYNET_PORT', 8000))
 listen_ip = os.environ.get('SKYNET_LISTEN_IP', '0.0.0.0')
 log_level = os.environ.get('LOG_LEVEL', 'DEBUG').strip().upper()
-supported_modules = {'summaries:dispatcher', 'summaries:executor', 'streaming_whisper', 'assistant', 'customer_configs'}
+supported_modules = {'summaries:dispatcher', 'summaries:executor', 'streaming_whisper', 'customer_configs'}
 enabled_modules = set(
-    os.environ.get('ENABLED_MODULES', 'summaries:dispatcher,summaries:executor,assistant,customer_configs').split(',')
+    os.environ.get('ENABLED_MODULES', 'summaries:dispatcher,summaries:executor,customer_configs').split(',')
 )
 modules = supported_modules.intersection(enabled_modules)
 file_refresh_interval = int(os.environ.get('FILE_REFRESH_INTERVAL', 30))
@@ -43,9 +43,6 @@ file_refresh_interval = int(os.environ.get('FILE_REFRESH_INTERVAL', 30))
 # models
 llama_path = os.environ.get('LLAMA_PATH', 'llama3.1')
 llama_n_ctx = int(os.environ.get('LLAMA_N_CTX', 128000))
-
-embeddings_chunk_size = int(os.environ.get('EMBEDDINGS_CHUNK_SIZE', 5000))
-embeddings_model_path = os.environ.get('EMBEDDINGS_MODEL_PATH', 'BAAI/bge-m3')
 
 # azure openai api
 # latest ga version https://learn.microsoft.com/en-us/azure/ai-services/openai/api-version-deprecation#latest-ga-api-release
@@ -170,17 +167,3 @@ oci_config_profile = os.environ.get('OCI_CONFIG_PROFILE', 'DEFAULT')
 oci_blackout_fallback_duration = int(os.environ.get('OCI_BLACKOUT_FALLBACK_DURATION', 30))
 oci_available = oci_model_id and oci_service_endpoint and oci_compartment_id and oci_auth_type and oci_config_profile
 use_oci = oci_available and llama_path.startswith('oci://')
-
-# rag
-vector_store_path = os.environ.get('VECTOR_STORE_PATH', '_vector_store_')
-supported_vector_store_types = {'faiss'}
-vector_store_type = supported_vector_store_types.intersection({os.environ.get('VECTOR_STORE_TYPE', 'faiss').lower()})
-vector_store_type = vector_store_type.pop() if vector_store_type else None
-
-# s3
-skynet_s3_access_key = os.environ.get('SKYNET_S3_ACCESS_KEY')
-skynet_s3_bucket = os.environ.get('SKYNET_S3_BUCKET')
-skynet_s3_endpoint = os.environ.get('SKYNET_S3_ENDPOINT')
-skynet_s3_region = os.environ.get('SKYNET_S3_REGION')
-skynet_s3_secret_key = os.environ.get('SKYNET_S3_SECRET_KEY')
-use_s3 = all([skynet_s3_access_key, skynet_s3_secret_key, skynet_s3_bucket, skynet_s3_endpoint, skynet_s3_region])

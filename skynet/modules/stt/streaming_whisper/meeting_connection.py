@@ -3,8 +3,7 @@ from typing import List, Union
 
 from starlette.websockets import WebSocket
 
-from skynet.env import whisper_backend
-from skynet.env import whisper_max_finals_in_initial_prompt as max_finals
+from skynet.env import whisper_backend, whisper_max_finals_in_initial_prompt as max_finals
 
 from skynet.logs import get_logger
 from skynet.modules.stt.streaming_whisper.cfg import model
