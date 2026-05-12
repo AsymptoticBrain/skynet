@@ -15,7 +15,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from oci.exceptions import TransientServiceError
 from openai.types.chat import ChatCompletionMessageParam
 
-from skynet.env import modules, oci_blackout_fallback_duration, use_oci
+from skynet.env import disable_rag_models, modules, oci_blackout_fallback_duration, use_oci
 from skynet.logs import get_logger
 from skynet.modules.monitoring import MAP_REDUCE_CHUNKING_COUNTER
 from skynet.modules.ttt.assistant.constants import assistant_rag_question_extractor
@@ -108,7 +108,7 @@ def format_docs(docs: list[Document]) -> str:
     )
 
 
-compressor = FlashrankRerank() if 'assistant' in modules else None
+compressor = FlashrankRerank() if 'assistant' in modules and not disable_rag_models else None
 
 
 async def assist(model: BaseChatModel, payload: AssistantDocumentPayload, customer_id: Optional[str] = None) -> str:

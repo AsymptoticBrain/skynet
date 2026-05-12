@@ -1,5 +1,6 @@
 from fastapi_versionizer.versionizer import Versionizer
 
+from skynet.env import disable_rag_models
 from skynet.logs import get_logger
 from skynet.modules.ttt.rag.app import get_vector_store
 from skynet.utils import create_app
@@ -19,8 +20,11 @@ async def app_startup():
     await db.initialize()
     log.info('Persistence initialized')
 
-    await get_vector_store()
-    log.info('Vector store initialized')
+    if disable_rag_models:
+        log.warning('SKYNET_DISABLE_RAG_MODELS is set; skipping vector store initialization')
+    else:
+        await get_vector_store()
+        log.info('Vector store initialized')
 
     log.info('assistant module initialized')
 
@@ -28,6 +32,9 @@ async def app_startup():
 async def app_shutdown():
     await db.close()
     log.info('Persistence closed')
+
+    if disable_rag_models:
+        return
 
     vector_store = await get_vector_store()
     await vector_store.cleanup()

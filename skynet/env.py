@@ -47,6 +47,11 @@ llama_n_ctx = int(os.environ.get('LLAMA_N_CTX', 128000))
 embeddings_chunk_size = int(os.environ.get('EMBEDDINGS_CHUNK_SIZE', 5000))
 embeddings_model_path = os.environ.get('EMBEDDINGS_MODEL_PATH', 'BAAI/bge-m3')
 
+# kill switch: when set, the assistant module mounts but the local embeddings
+# and reranker models are not loaded. RAG ingestion/query will be unavailable
+# until this is unset; useful when no customer has a RAG database configured.
+disable_rag_models = tobool(os.environ.get('SKYNET_DISABLE_RAG_MODELS'))
+
 # azure openai api
 # latest ga version https://learn.microsoft.com/en-us/azure/ai-services/openai/api-version-deprecation#latest-ga-api-release
 azure_openai_api_version = os.environ.get('AZURE_OPENAI_API_VERSION', '2024-10-21')

@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 from langchain_core.vectorstores.base import VectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from skynet.env import embeddings_model_path
+from skynet.env import disable_rag_models, embeddings_model_path
 from skynet.logs import get_logger
 from skynet.modules.ttt.assistant.v1.models import RagConfig, RagPayload, RagStatus
 from skynet.modules.ttt.rag.constants import ERROR_RAG_KEY, RUNNING_RAG_KEY, STORED_RAG_KEY, supported_files
@@ -40,7 +40,11 @@ def bypass_ingestion(config: RagConfig, new_config: RagConfig):
 
 
 class SkynetVectorStore(ABC):
-    embedding = HuggingFaceEmbeddings(model_name=embeddings_model_path, model_kwargs={'device': 'cpu'})
+    embedding = (
+        None
+        if disable_rag_models
+        else HuggingFaceEmbeddings(model_name=embeddings_model_path, model_kwargs={'device': 'cpu'})
+    )
     tasks = set()
 
     @abstractmethod
