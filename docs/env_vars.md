@@ -7,7 +7,7 @@ Skynet is configurable via environment variables. Some are shared by all modules
 | **Name**                       | **Description**                                             | **Default**                               | **Available values**                                                            |
 |--------------------------------|-------------------------------------------------------------|-------------------------------------------|---------------------------------------------------------------------------------|
 | `ENABLE_METRICS`               | If the Prometheus metrics endpoint should be enabled or not | `true`                                    | `true`, `false`                                                                 |
-| `ENABLED_MODULES`              | Which modules should be enabled, separated by commas        | `summaries:dispatcher,summaries:executor,customer_configs` | `summaries:dispatcher`, `summaries:executor`, `customer_configs`, `streaming_whisper` |
+| `ENABLED_MODULES`              | Which modules should be enabled, separated by commas        | `summaries:dispatcher,summaries:executor,assistant` | `summaries:dispatcher`, `summaries:executor`, `assistant`, `streaming_whisper` |
 | `BYPASS_AUTHORIZATION`         | If signed JWT authorization should be enabled               | `false`                                   | `true`, `false`                                                                 |
 | `ASAP_PUB_KEYS_REPO_URL`       | Public key repository URL                                   | `NULL`                                    | N/A                                                                             |
 | `ASAP_PUB_KEYS_FOLDER`         | Public key repository root path                             | `NULL`                                    | N/A                                                                             |
@@ -15,6 +15,16 @@ Skynet is configurable via environment variables. Some are shared by all modules
 | `ASAP_PUB_KEYS_MAX_CACHE_SIZE` | Public key maximum cache size in bytes                      | `512`                                     | N/A                                                                             |
 | `LOG_LEVEL`                    | Log level                                                   | `DEBUG`                                   | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`                                 |
 | `DISABLE_LLM_HEALTH_CHECK`     | Disables LLM health check if only OpenAI/Azure will be used | `false`                                   | `true`, `false`                                                                 |
+
+
+## Assistant Module Environment Variables
+
+| Name                             | **Description**                                                                                                                                    | **Default**                         | **Available values** |
+|----------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------|----------------------|   
+| `EMBEDDINGS_CHUNK_SIZE`          | Max size (in characters) of documents for which embeddings will be computed. Should be less than the max tokens of the embedding model             | 5000                                | N/A                  |
+| `EMBEDDINGS_MODEL_PATH`          | The path where the embeddings model is located.                                                                                                    | `BAAI/bge-m3`    | N/A                  |
+| `VECTOR_STORE_PATH`              | The default path where the vector store is saved locally                                                                                           | `_vector_store_`                    | N/A                  |
+| `SKYNET_DISABLE_RAG_MODELS`      | Kill switch. When truthy, the assistant module mounts but the local embeddings (`BAAI/bge-m3`) and flashrank reranker are not loaded at startup. RAG ingestion/query is unavailable until this is unset. Useful when no customer has a RAG database configured. | `false` | `true`, `false` |
 
 
 ## Summaries Module Environment Variables
@@ -54,6 +64,15 @@ Skynet is configurable via environment variables. Some are shared by all modules
 | `OCI_COMPARTMENT_ID`             | OCI Compartment ID                                                                                                                                 | NULL                                | N/A                  |
 | `OCI_AUTH_TYPE`                  | OCI Authorization type                                                                                                                             | `API KEY`                           | N/A                  |
 | `OCI_CONFIG_PROFILE`             | OCI Config profile                                                                                                                                 | `DEFAULT`                           | N/A                  |
+
+## S3 vars (used for RAG vector store replication)
+| Name                             | **Description**                                                                                                                                    | **Default**                         | **Available values** |
+|----------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------|----------------------|
+| `SKYNET_S3_ACCESS_KEY`           | S3 access key                                                                                                                                      | NULL                                | N/A                  |
+| `SKYNET_S3_BUCKET`               | S3 bucket                                                                                                                                          | NULL                                | N/A                  |
+| `SKYNET_S3_ENDPOINT`             | S3 endpoint                                                                                                                                        | NULL                                | N/A                  |
+| `SKYNET_S3_REGION`               | S3 region                                                                                                                                          | NULL                                | N/A                  |
+| `SKYNET_S3_SECRET_KEY`           | S3 secret key                                                                                                                                      | NULL                                | N/A                  |
 
 ## Streaming Whisper Module Environment Variables
 

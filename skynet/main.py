@@ -40,6 +40,12 @@ async def lifespan(main_app: FastAPI):
         main_app.mount('/streaming-whisper', streaming_whisper_app)
         main_app.mount('/vox', vox_app)
 
+    if 'assistant' in modules:
+        from skynet.modules.ttt.assistant.app import app as rag_app, app_startup as assistant_startup
+
+        main_app.mount('/assistant', rag_app)
+        await assistant_startup()
+
     if 'customer_configs' in modules:
         from skynet.modules.ttt.customer_configs.app import (
             app as customer_configs_app,
@@ -71,6 +77,11 @@ async def lifespan(main_app: FastAPI):
         from skynet.modules.ttt.summaries.app import executor_shutdown as executor_shutdown
 
         await executor_shutdown()
+
+    if 'assistant' in modules:
+        from skynet.modules.ttt.assistant.app import app_shutdown as assistant_shutdown
+
+        await assistant_shutdown()
 
     if 'customer_configs' in modules:
         from skynet.modules.ttt.customer_configs.app import app_shutdown as customer_configs_shutdown

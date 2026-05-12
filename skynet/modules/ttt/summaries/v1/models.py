@@ -112,6 +112,7 @@ class DocumentMetadata(BaseModel):
 
 
 class JobType(Enum):
+    ASSIST = 'assist'
     ACTION_ITEMS = 'action_items'
     SUMMARY = 'summary'
     PROCESS_TEXT = 'process_text'

@@ -5,7 +5,12 @@ from typing import Any
 import httpx
 
 import skynet.modules.stt.streaming_whisper.cfg as cfg
-from skynet.env import whisper_backend, whisper_batch_remote_timeout, whisper_beam_size, whisper_remote_model
+from skynet.env import (
+    whisper_backend,
+    whisper_batch_remote_timeout,
+    whisper_beam_size,
+    whisper_remote_model,
+)
 from skynet.logs import get_logger
 from skynet.modules.stt.streaming_whisper.utils.utils import (
     _get_remote_client,

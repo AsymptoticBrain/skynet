@@ -88,7 +88,9 @@ class WhisperResult:
         return cls(
             text=''.join([segment.text for segment in ts_result]),
             segments=[WhisperSegment.model_validate(segment._asdict()) for segment in ts_result],
-            words=[WhisperWord.model_validate(word._asdict()) for segment in ts_result for word in segment.words],
+            words=[
+                WhisperWord.model_validate(word._asdict()) for segment in ts_result for word in segment.words
+            ],
         )
 
     @classmethod
