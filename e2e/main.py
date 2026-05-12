@@ -7,6 +7,11 @@ async def main():
     success = True
 
     try:
+        if 'assistant' in modules:
+            from .assistant import run as assistant_run
+
+            await assistant_run()
+
         if 'summaries' in modules:
             from .summaries import run as summaries_run
 

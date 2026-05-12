@@ -45,7 +45,11 @@ class _BatchUploadSizeMiddleware:
         self._limit = max_bytes + _MULTIPART_OVERHEAD_HEADROOM
 
     async def __call__(self, scope, receive, send):
-        if scope.get('type') == 'http' and scope.get('method') == 'POST' and scope.get('path') == self._path:
+        if (
+            scope.get('type') == 'http'
+            and scope.get('method') == 'POST'
+            and scope.get('path') == self._path
+        ):
             for name, value in scope.get('headers', ()):
                 if name == b'content-length':
                     try:
@@ -63,7 +67,10 @@ class _BatchUploadSizeMiddleware:
                         await send(
                             {
                                 'type': 'http.response.body',
-                                'body': (b'{"detail":"Upload exceeds ' b'WHISPER_BATCH_MAX_UPLOAD_BYTES"}'),
+                                'body': (
+                                    b'{"detail":"Upload exceeds '
+                                    b'WHISPER_BATCH_MAX_UPLOAD_BYTES"}'
+                                ),
                             }
                         )
                         return
@@ -137,7 +144,10 @@ async def transcribe_audio(
         if size > whisper_batch_max_upload_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=(f'Upload exceeds WHISPER_BATCH_MAX_UPLOAD_BYTES ' f'({whisper_batch_max_upload_bytes} bytes)'),
+                detail=(
+                    f'Upload exceeds WHISPER_BATCH_MAX_UPLOAD_BYTES '
+                    f'({whisper_batch_max_upload_bytes} bytes)'
+                ),
             )
         chunks.append(chunk)
 
