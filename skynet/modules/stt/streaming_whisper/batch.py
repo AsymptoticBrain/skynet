@@ -27,20 +27,24 @@ def _result_to_verbose_json(result: WhisperResult, duration: float | None) -> di
 
     def seg_dump(seg: WhisperSegment) -> dict[str, Any]:
         return {
-            'id': seg.id,
-            'seek': seg.seek,
-            'start': seg.start,
-            'end': seg.end,
-            'text': seg.text,
-            'tokens': seg.tokens,
-            'temperature': seg.temperature,
-            'avg_logprob': seg.avg_logprob,
-            'compression_ratio': seg.compression_ratio,
-            'no_speech_prob': seg.no_speech_prob,
+            'id': seg.id or 0,
+            'seek': seg.seek or 0,
+            'start': seg.start or 0.0,
+            'end': seg.end or 0.0,
+            'text': seg.text or '',
+            'tokens': seg.tokens or [],
+            'temperature': seg.temperature or 0.0,
+            'avg_logprob': seg.avg_logprob or 0.0,
+            'compression_ratio': seg.compression_ratio or 0.0,
+            'no_speech_prob': seg.no_speech_prob or 0.0,
         }
 
     def word_dump(w: WhisperWord) -> dict[str, Any]:
-        return {'word': w.word, 'start': w.start, 'end': w.end}
+        return {
+            'word': w.word or '',
+            'start': w.start or 0.0,
+            'end': w.end or 0.0,
+        }
 
     payload: dict[str, Any] = {
         'task': 'transcribe',
@@ -52,6 +56,15 @@ def _result_to_verbose_json(result: WhisperResult, duration: float | None) -> di
     if duration is not None and not math.isnan(duration):
         payload['duration'] = duration
     return payload
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _transcribe_local_file(file_bytes: bytes, lang: str | None, prompt: str | None) -> tuple[WhisperResult, float]:
@@ -85,7 +98,7 @@ def _transcribe_remote_file(
     data: dict[str, str] = {
         'model': whisper_remote_model,
         'response_format': 'verbose_json',
-        'timestamp_granularities[]': 'word',
+        'timestamp_granularities[]': 'segment',
         'temperature': '0',
     }
     if lang:
@@ -113,7 +126,7 @@ def _transcribe_remote_file(
         raise RuntimeError(f'Remote whisper returned non-JSON response: {e}') from e
 
     result = WhisperResult.from_verbose_json(payload)
-    duration = float(payload.get('duration') or 0.0)
+    duration = _safe_float(payload.get('duration'))
     return result, duration
 
 

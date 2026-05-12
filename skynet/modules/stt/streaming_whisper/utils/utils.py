@@ -1,3 +1,4 @@
+import io
 import math
 import secrets
 import time
@@ -6,9 +7,11 @@ from typing import List, Tuple
 
 import httpx
 import numpy as np
+import soundfile as sf
+import torchaudio
 from numpy import ndarray
 from pydantic import BaseModel
-from silero_vad import get_speech_timestamps, read_audio
+from silero_vad import get_speech_timestamps
 from uuid6 import UUID
 
 import skynet.modules.stt.streaming_whisper.cfg as cfg
@@ -121,10 +124,10 @@ class WhisperResult:
                 end=float(seg.get('end', 0.0)),
                 text=seg.get('text', ''),
                 tokens=list(seg.get('tokens', [])),
-                temperature=float(seg.get('temperature', 0.0)),
-                avg_logprob=float(seg.get('avg_logprob', 0.0)),
-                compression_ratio=float(seg.get('compression_ratio', 0.0)),
-                no_speech_prob=float(seg.get('no_speech_prob', 0.0)),
+                temperature=0.0,
+                avg_logprob=0.0,
+                compression_ratio=0.0,
+                no_speech_prob=0.0,
                 words=[],
             )
             for i, seg in enumerate(seg_data)
@@ -300,11 +303,24 @@ def convert_seconds_to_bytes(cut_mark: float) -> int:
 def is_silent(audio: bytes) -> Tuple[bool, iter]:
     chunk_duration = convert_bytes_to_seconds(audio)
     wav_header = get_wav_header([audio], chunk_duration_s=chunk_duration)
-    stream = wav_header + b'' + audio
-    audio = read_audio(stream)
-    st = get_speech_timestamps(audio, model=cfg.vad_model, return_seconds=True)
+    stream = wav_header + audio
+
+    buffer = io.BytesIO(stream)
+    waveform, sample_rate = torchaudio.load(buffer)
+
+    audio_tensor = waveform.squeeze(0)  # silero expects 1D tensor
+
+    st = get_speech_timestamps(audio_tensor, model=cfg.vad_model, return_seconds=True)
+    log.debug(
+        f'is_silent input: {len(audio)} bytes, duration={chunk_duration:.3f}s, '
+        f'waveform shape={audio_tensor.shape}, max_amplitude={audio_tensor.abs().max().item():.4f}'
+    )
+    log.debug(
+        f'Speech timestamps: {st}, tensor min={audio_tensor.min():.4f}, '
+        f'max={audio_tensor.max():.4f}, dtype={audio_tensor.dtype}'
+    )
     log.debug(f'Detected speech timestamps: {st}')
-    silent = True if len(st) == 0 else False
+    silent = len(st) == 0
     return silent, st
 
 
@@ -423,8 +439,14 @@ def _transcribe_local(audio_bytes: bytes, lang: str, previous_tokens) -> Whisper
 
 
 def _transcribe_remote(audio_bytes: bytes, lang: str, previous_tokens) -> WhisperResult:
-    duration_s = convert_bytes_to_seconds(audio_bytes)
-    wav_bytes = get_wav_header([audio_bytes], chunk_duration_s=duration_s) + audio_bytes
+    # Convert raw PCM (int16) to a proper WAV via soundfile so the remote
+    # server gets a clean container with the correct sample rate.
+    pcm = np.frombuffer(audio_bytes, dtype=np.int16)
+
+    buffer = io.BytesIO()
+    sf.write(buffer, pcm, 16000, format='WAV')
+    buffer.seek(0)
+    wav_bytes = buffer.read()
 
     data = {
         'model': whisper_remote_model,
