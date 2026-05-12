@@ -1,3 +1,5 @@
+import os
+
 from botocore.config import Config
 
 from skynet.env import (
@@ -24,6 +26,10 @@ class S3:
 
     async def download_file(self, filename):
         try:
+            parent = os.path.dirname(filename)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+
             async with self.session.resource('s3', endpoint_url=skynet_s3_endpoint) as s3:
                 obj = await s3.Object(bucket_name=skynet_s3_bucket, key=filename)
 

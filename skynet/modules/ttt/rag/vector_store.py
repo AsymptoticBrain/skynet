@@ -22,19 +22,22 @@ from ..persistence import db
 log = get_logger(__name__)
 
 
-def bypass_files_ingestion(config: RagConfig, new_config: RagConfig):
-    return set(config.files) == set(new_config.files)
+def bypass_files_ingestion(payload: RagPayload):
+    # RagConfig.files only stores filenames (the UploadFile validator strips
+    # everything else), so we can't tell whether a re-uploaded filename has
+    # the same bytes as before. Be conservative: any new upload re-ingests.
+    return not payload.files
 
 
 def bypass_urls_ingestion(config: RagConfig, new_config: RagConfig):
     return set(config.urls) == set(new_config.urls) and config.max_depth == new_config.max_depth
 
 
-def bypass_ingestion(config: RagConfig, new_config: RagConfig):
+def bypass_ingestion(config: RagConfig, new_config: RagConfig, payload: RagPayload):
     return (
         config
         and config.status == RagStatus.SUCCESS
-        and bypass_files_ingestion(config, new_config)
+        and bypass_files_ingestion(payload)
         and bypass_urls_ingestion(config, new_config)
     )
 
@@ -166,13 +169,21 @@ class SkynetVectorStore(ABC):
 
         updated_config = RagConfig(**payload.model_dump())
 
-        if bypass_ingestion(config, updated_config):
+        if bypass_ingestion(config, updated_config, payload):
             return await self.update_config(store_id, system_message=payload.system_message)
 
         await db.rpush(RUNNING_RAG_KEY, store_id)
         await db.set(store_id, RagConfig.model_dump_json(updated_config))
 
-        temp_file_paths = await save_files(self.get_temp_folder(store_id), payload.files)
+        try:
+            temp_file_paths = await save_files(self.get_temp_folder(store_id), payload.files)
+        except Exception as e:
+            error = str(e)
+            log.error(f'Failed to save uploaded files for store {store_id}: {error}')
+            await db.lrem(RUNNING_RAG_KEY, 0, store_id)
+            await db.rpush(ERROR_RAG_KEY, store_id)
+            shutil.rmtree(self.get_temp_folder(store_id), ignore_errors=True)
+            return await self.update_config(store_id, status=RagStatus.ERROR, error=error)
 
         task = asyncio.create_task(
             self.workflow(store_id, urls=payload.urls, max_depth=payload.max_depth, files=temp_file_paths)
