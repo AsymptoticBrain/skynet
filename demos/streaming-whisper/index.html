@@ -24,6 +24,7 @@
                           <button class="button is-primary" id="transcribebtn">Transcribe</button>
                           <button class="button" id="stopbtn" disabled>Stop</button>
                           <button class="button" id="clearbtn">Clear</button>
+                          <button class="button is-link" id="summarizebtn" disabled>Summarize</button>
                           <div class="select is-disabled">
                               <select id="langselector" name="langselector">
                                 <option value="en" selected="selected">English</option>
@@ -58,6 +59,22 @@
       <div class="container is-max-desktop" id="finalcontainer">
       </div>
   </section>
+  <section class="section is-small">
+      <div class="container is-max-desktop">
+          <div class="field">
+              <input type="text"
+                     class="input"
+                     id="summaryhost"
+                     placeholder="http://localhost:8000"
+                     value="http://localhost:8000"
+              >
+          </div>
+          <div class="box" id="summarycontainer" style="display: none">
+              <h2 class="subtitle">Summary</h2>
+              <div id="summaryoutput"></div>
+          </div>
+      </div>
+  </section>
   <audio controls="controls" id="aud" style="display: none"><source src="data:audio/wav;base64," type="audio/wav"></audio>
     <script>
         let orderedFinals = []
@@ -84,11 +101,28 @@
             const transcribeBtn = document.getElementById('transcribebtn')
             const stopBtn = document.getElementById('stopbtn')
             const clearBtn = document.getElementById('clearbtn')
+            const summarizeBtn = document.getElementById('summarizebtn')
             const output = document.getElementById('outputcontainer')
             const final = document.getElementById('finalcontainer')
             const jwt = document.getElementById('jwt')
             const wsHost = document.getElementById('wshost')
+            const summaryHost = document.getElementById('summaryhost')
+            const summaryContainer = document.getElementById('summarycontainer')
+            const summaryOutput = document.getElementById('summaryoutput')
             const muteBtn = document.getElementById('mutebtn')
+
+            function getTranscript() {
+                return finals
+                    .slice()
+                    .sort((a, b) => a.ts - b.ts)
+                    .map(f => f.text)
+                    .join(' ')
+                    .trim()
+            }
+
+            function updateSummarizeBtn() {
+                summarizeBtn.disabled = getTranscript().length === 0
+            }
 
             let isMuted = false
             let clientId = crypto.randomUUID()
@@ -110,7 +144,66 @@
                 final.innerHTML = ''
                 interims = []
                 output.innerHTML = 'Waiting for interims...'
+                summaryContainer.style.display = 'none'
+                summaryOutput.innerHTML = ''
+                updateSummarizeBtn()
             })
+
+            async function summarize() {
+                const text = getTranscript()
+                if (!text) return
+
+                summarizeBtn.classList.add('is-loading')
+                summarizeBtn.disabled = true
+                summaryContainer.style.display = ''
+                summaryOutput.innerHTML = '<p class="has-text-grey">Submitting transcript...</p>'
+
+                const baseUrl = summaryHost.value.trim().replace(/\/+$/, '')
+                const headers = { 'Content-Type': 'application/json' }
+                const token = jwt.value.trim()
+                if (token) headers['Authorization'] = 'Bearer ' + token
+
+                try {
+                    const r = await fetch(baseUrl + '/summaries/v1/summary', {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ text, hint: 'meeting' })
+                    })
+                    if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + await r.text())
+                    const { id } = await r.json()
+                    if (!id) throw new Error('No job id returned')
+
+                    summaryOutput.innerHTML = '<p class="has-text-grey">Waiting for summary (job ' + id + ')...</p>'
+
+                    const pollHeaders = {}
+                    if (token) pollHeaders['Authorization'] = 'Bearer ' + token
+
+                    await new Promise((resolve, reject) => {
+                        const interval = setInterval(async () => {
+                            try {
+                                const jr = await fetch(baseUrl + '/summaries/v1/job/' + id, { headers: pollHeaders })
+                                if (!jr.ok) return
+                                const data = await jr.json()
+                                if (data.status === 'success') {
+                                    clearInterval(interval)
+                                    summaryOutput.innerHTML = '<p>' + data.result.replace(/\n/g, '<br>') + '</p>'
+                                    resolve()
+                                } else if (data.status === 'error') {
+                                    clearInterval(interval)
+                                    reject(new Error(data.result || 'Summary job failed'))
+                                }
+                            } catch (_) {}
+                        }, 2000)
+                    })
+                } catch (err) {
+                    summaryOutput.innerHTML = '<p class="has-text-danger">' + err.message + '</p>'
+                } finally {
+                    summarizeBtn.classList.remove('is-loading')
+                    updateSummarizeBtn()
+                }
+            }
+
+            summarizeBtn.addEventListener('click', summarize)
 
             var isSpeaking = false
 
@@ -161,6 +254,7 @@
                     } else {
                         finals.push(msg)
                         renderFinals()
+                        updateSummarizeBtn()
                     }
                 }
             }
