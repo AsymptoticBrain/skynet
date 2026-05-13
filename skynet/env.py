@@ -63,6 +63,12 @@ openai_api_port = 8003
 openai_api_base_url = os.environ.get(
     'OPENAI_API_BASE_URL', f'http://localhost:{openai_api_port}' if use_vllm else "http://localhost:11434"
 )
+# Callers append /v1 themselves (e.g. ChatOpenAI base_url, readiness probe at
+# /v1/models). Normalize so a trailing slash or /v1 in the env var doesn't turn
+# into /v1/v1/... at inference time.
+openai_api_base_url = openai_api_base_url.rstrip('/')
+if openai_api_base_url.endswith('/v1'):
+    openai_api_base_url = openai_api_base_url[:-3]
 
 # openai
 openai_credentials_file = os.environ.get('SKYNET_CREDENTIALS_PATH')

@@ -55,15 +55,13 @@ async def is_ready():
     if use_oci or disable_llm_health_check:
         return True
 
-    url = f'{openai_api_base_url}/health' if use_vllm else openai_api_base_url
+    # /v1/models works for any OpenAI-compatible upstream (remote vLLM, LiteLLM, Ollama).
+    url = f'{openai_api_base_url}/health' if use_vllm else f'{openai_api_base_url}/v1/models'
 
     try:
-        response = await http_client.get(url, 'text')
-
-        if use_vllm:
-            return response == ''
-        else:
-            return response == 'Ollama is running'
+        response = await http_client.request('GET', url)
+        response.release()
+        return response.status == 200
     except Exception:
         return False
 
