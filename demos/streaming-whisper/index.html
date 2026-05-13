@@ -186,7 +186,11 @@
                                 const data = await jr.json()
                                 if (data.status === 'success') {
                                     clearInterval(interval)
-                                    summaryOutput.innerHTML = '<p>' + data.result.replace(/\n/g, '<br>') + '</p>'
+                                    summaryOutput.innerHTML = ''
+                                    const p = document.createElement('p')
+                                    p.style.whiteSpace = 'pre-wrap'
+                                    p.textContent = data.result
+                                    summaryOutput.appendChild(p)
                                     resolve()
                                 } else if (data.status === 'error') {
                                     clearInterval(interval)
@@ -196,7 +200,11 @@
                         }, 2000)
                     })
                 } catch (err) {
-                    summaryOutput.innerHTML = '<p class="has-text-danger">' + err.message + '</p>'
+                    summaryOutput.innerHTML = ''
+                    const p = document.createElement('p')
+                    p.className = 'has-text-danger'
+                    p.textContent = err.message
+                    summaryOutput.appendChild(p)
                 } finally {
                     summarizeBtn.classList.remove('is-loading')
                     updateSummarizeBtn()
