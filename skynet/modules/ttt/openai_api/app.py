@@ -56,11 +56,7 @@ async def is_ready():
         return True
 
     # /v1/models works for any OpenAI-compatible upstream (remote vLLM, LiteLLM, Ollama).
-    base = openai_api_base_url.rstrip('/')
-    if base.endswith('/v1'):
-        base = base[:-3]
-
-    url = f'{base}/health' if use_vllm else f'{base}/v1/models'
+    url = f'{openai_api_base_url}/health' if use_vllm else f'{openai_api_base_url}/v1/models'
 
     try:
         response = await http_client.request('GET', url)
