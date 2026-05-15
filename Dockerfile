@@ -84,6 +84,10 @@ COPY --from=ffmpeg_builder /usr/local/include /usr/local/include
 COPY --from=ffmpeg_builder /copy_libs/ /usr/local/lib/
 COPY --from=ffmpeg_builder /usr/local/lib/pkgconfig /usr/local/lib/pkgconfig
 COPY --chown=jitsi:jitsi --from=builder /app/.venv /app/.venv
+# Pre-bundled tiktoken encoding cache; runtime cannot reach
+# openaipublic.blob.core.windows.net, so the encodings are committed to the
+# repo under skynet/cache/tiktoken_cache and copied into the image here.
+COPY --chown=jitsi:jitsi skynet/cache/tiktoken_cache /app/tiktoken_cache
 
 RUN \
     apt-get update && \
@@ -113,7 +117,8 @@ ENV \
     OUTLINES_CACHE_DIR=/app/vllm/outlines \
     VLLM_CACHE_ROOT=/app/vllm/cache \
     VLLM_CONFIG_ROOT=/app/vllm/config \
-    HF_HOME=/app/hf
+    HF_HOME=/app/hf \
+    TIKTOKEN_CACHE_DIR=/app/tiktoken_cache
 
 VOLUME [ "/models" ]
 

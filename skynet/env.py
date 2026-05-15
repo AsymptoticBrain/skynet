@@ -3,6 +3,15 @@
 import os
 import sys
 import uuid
+from pathlib import Path
+
+# Point tiktoken at a bundled, pre-warmed encoding cache before anything
+# imports tiktoken (langchain pulls it in transitively). The Docker image
+# bakes the cache at /app/tiktoken_cache and sets TIKTOKEN_CACHE_DIR; this
+# fallback covers local dev runs where the cache sits next to the package.
+_bundled_tiktoken_cache = Path(__file__).parent / 'cache' / 'tiktoken_cache'
+if _bundled_tiktoken_cache.is_dir():
+    os.environ.setdefault('TIKTOKEN_CACHE_DIR', str(_bundled_tiktoken_cache))
 
 import torch
 
