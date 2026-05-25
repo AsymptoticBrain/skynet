@@ -1,16 +1,16 @@
+from fastapi import FastAPI
 from fastapi_versionizer.versionizer import Versionizer
 
 from skynet.env import disable_rag_models
 from skynet.logs import get_logger
 from skynet.modules.ttt.rag.app import get_vector_store
-from skynet.utils import create_app
 from ..persistence import db
 from .v1.router import router as v1_router
 
 
 log = get_logger(__name__)
 
-app = create_app()
+app = FastAPI()
 app.include_router(v1_router)
 
 Versionizer(app=app, prefix_format='/v{major}', sort_routes=True).versionize()
