@@ -1,6 +1,6 @@
 import random
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 from fastapi_versionizer.versionizer import Versionizer
 
 from skynet import http_client
@@ -9,7 +9,6 @@ from skynet.env import echo_requests_base_url, echo_requests_percent, echo_reque
 from skynet.logs import get_logger
 from skynet.modules.ttt.oci.utils import initialize as initialize_oci
 from skynet.modules.ttt.openai_api.app import initialize as initialize_openai_api
-from skynet.utils import create_app
 from ..persistence import db
 
 from .jobs import start_monitoring_jobs
@@ -18,7 +17,7 @@ from .v1.router import router as v1_router
 
 log = get_logger(__name__)
 
-app = create_app()
+app = FastAPI()
 app.include_router(v1_router)
 
 if echo_requests_base_url:

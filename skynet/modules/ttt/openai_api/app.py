@@ -1,6 +1,8 @@
 import subprocess
 import sys
 
+from fastapi import FastAPI
+
 from skynet import http_client
 from skynet.env import (
     disable_llm_health_check,
@@ -13,11 +15,10 @@ from skynet.env import (
 )
 from skynet.logs import get_logger
 from skynet.modules.ttt.openai_api.slim_router import router as slim_router
-from skynet.utils import create_app
 
 log = get_logger(__name__)
 
-app = create_app()
+app = FastAPI()
 app.include_router(slim_router)
 
 
